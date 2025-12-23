@@ -740,3 +740,95 @@ exports.getVerifiedHistory = async (req, res) => {
     res.status(500).json({ message: "Failed to get history", error: error.message });
   }
 };
+
+/**
+ * Verify work completion (public endpoint for dashboard)
+ * Updates both aggregated_locations and work_assignments to 'verified'
+ */
+exports.verifyLocation = async (req, res) => {
+  try {
+    const { locationId } = req.params;
+    const { notes } = req.body;
+
+    // Update location status
+    const [locationResult] = await db.promise().query(
+      "UPDATE aggregated_locations SET status = 'verified', verified_at = NOW() WHERE id = ?",
+      [locationId]
+    );
+
+    if (locationResult.affectedRows === 0) {
+      return res.status(404).json({ message: "Location not found" });
+    }
+
+    // Update assignment status (match pending_verification, in_progress, or assigned)
+    const [assignmentResult] = await db.promise().query(
+      `UPDATE work_assignments 
+       SET status = 'verified', completed_at = NOW(), admin_notes = ?
+       WHERE aggregated_location_id = ? AND status IN ('pending_verification', 'in_progress', 'assigned')`,
+      [notes || 'Verified from dashboard', locationId]
+    );
+
+    console.log(`Verified location ${locationId}: location updated=${locationResult.affectedRows}, assignment updated=${assignmentResult.affectedRows}`);
+
+    res.json({ 
+      message: "Work verified successfully",
+      locationUpdated: locationResult.affectedRows > 0,
+      assignmentUpdated: assignmentResult.affectedRows > 0
+    });
+  } catch (error) {
+    console.error("Verify location error:", error);
+    res.status(500).json({ message: "Failed to verify work", error: error.message });
+  }
+};
+
+/**
+ * Batch verify multiple locations (public endpoint)
+ */
+exports.batchVerifyLocations = async (req, res) => {
+  const connection = await db.promise().getConnection();
+  
+  try {
+    await connection.beginTransaction();
+    
+    const { locationIds, notes } = req.body;
+
+    if (!locationIds || !locationIds.length) {
+      return res.status(400).json({ message: "locationIds are required" });
+    }
+
+    let locationsUpdated = 0;
+    let assignmentsUpdated = 0;
+
+    for (const locationId of locationIds) {
+      const [locResult] = await connection.query(
+        "UPDATE aggregated_locations SET status = 'verified', verified_at = NOW() WHERE id = ?",
+        [locationId]
+      );
+      locationsUpdated += locResult.affectedRows;
+
+      const [assignResult] = await connection.query(
+        `UPDATE work_assignments 
+         SET status = 'verified', completed_at = NOW(), admin_notes = ?
+         WHERE aggregated_location_id = ? AND status IN ('pending_verification', 'in_progress', 'assigned')`,
+        [notes || 'Batch verified from dashboard', locationId]
+      );
+      assignmentsUpdated += assignResult.affectedRows;
+    }
+
+    await connection.commit();
+
+    console.log(`Batch verified ${locationIds.length} locations: locations updated=${locationsUpdated}, assignments updated=${assignmentsUpdated}`);
+
+    res.json({ 
+      message: `${locationIds.length} locations verified successfully`,
+      locationsUpdated,
+      assignmentsUpdated
+    });
+  } catch (error) {
+    await connection.rollback();
+    console.error("Batch verify error:", error);
+    res.status(500).json({ message: "Failed to batch verify", error: error.message });
+  } finally {
+    connection.release();
+  }
+};

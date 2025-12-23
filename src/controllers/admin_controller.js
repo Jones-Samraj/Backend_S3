@@ -334,11 +334,11 @@ exports.verifyWork = async (req, res) => {
       [locationId]
     );
 
-    // Update assignment status
+    // Update assignment status (match pending_verification, in_progress, or assigned)
     await db.promise().query(
       `UPDATE work_assignments 
-       SET status = 'completed', completed_at = NOW(), admin_notes = ?
-       WHERE aggregated_location_id = ? AND status = 'in_progress'`,
+       SET status = 'verified', completed_at = NOW(), admin_notes = ?
+       WHERE aggregated_location_id = ? AND status IN ('pending_verification', 'in_progress', 'assigned')`,
       [notes, locationId]
     );
 
@@ -370,8 +370,8 @@ exports.batchVerify = async (req, res) => {
 
       await connection.query(
         `UPDATE work_assignments 
-         SET status = 'completed', completed_at = NOW(), admin_notes = ?
-         WHERE aggregated_location_id = ? AND status IN ('assigned', 'in_progress')`,
+         SET status = 'verified', completed_at = NOW(), admin_notes = ?
+         WHERE aggregated_location_id = ? AND status IN ('pending_verification', 'in_progress', 'assigned')`,
         [notes, locationId]
       );
     }

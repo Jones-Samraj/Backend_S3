@@ -29,6 +29,10 @@ router.patch("/assignments/:assignmentId", reportController.updateWorkAssignment
 // Verified history (public - for history page)
 router.get("/history/verified", reportController.getVerifiedHistory);
 
+// Verify location (public - for dashboard without auth)
+router.post("/verify/:locationId", reportController.verifyLocation);
+router.post("/verify/batch", reportController.batchVerifyLocations);
+
 // Update report status (admin)
 router.patch("/:reportId/status", auth, reportController.updateReportStatus);
 
